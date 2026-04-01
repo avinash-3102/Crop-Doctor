@@ -1,0 +1,7 @@
+flask
+twilio
+numpy
+tensorflow
+pillow
+requests
+gunicorn

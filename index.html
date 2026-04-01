@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Crop Doctor Chat</title>
+
+    <style>
+        body {
+            font-family: Arial;
+            background: #ece5dd;
+        }
+
+        .chat-box {
+            width: 400px;
+            margin: 50px auto;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .user, .bot {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 10px;
+            max-width: 70%;
+        }
+
+        .user {
+            background: #dcf8c6;
+            margin-left: auto;
+        }
+
+        .bot {
+            background: #f1f0f0;
+        }
+
+        input[type="file"] {
+            margin-top: 10px;
+        }
+
+        button {
+            margin-top: 10px;
+            padding: 8px 15px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="chat-box">
+
+    <div class="bot">👋 Hello Farmer! Send crop image.</div>
+
+    {% if result %}
+        <div class="user">📷 Image uploaded</div>
+
+        <div class="bot">
+            🌿 Disease: {{ result }} <br>
+            💊 {{ treatment }}
+        </div>
+    {% endif %}
+
+    <form method="POST" enctype="multipart/form-data">
+        <input type="file" name="file" required><br>
+        <button type="submit">Send</button>
+    </form>
+
+</div>
+
+</body>
+</html>

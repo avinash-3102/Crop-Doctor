@@ -1,0 +1,3 @@
+0 Healthy Leaf
+1 Yellow Leaf
+2 Leaf Spot
