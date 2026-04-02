@@ -8,21 +8,19 @@ from io import BytesIO
 
 app = Flask(__name__)
 
-# 🗂 Store user language
+# Store user language
 user_lang = {}
 
-# ✅ Load AI Model
+# Load AI model
 model = tf.keras.models.load_model("keras_model.h5", compile=False)
 
-# ✅ Load labels
+# Load labels
 with open("labels.txt", "r") as f:
     labels = [line.strip() for line in f.readlines()]
 
-# 🧠 AI Prediction Function (FIXED)
+# AI Prediction
 def predict_disease(image_url):
     try:
-        print("Fetching image from:", image_url)
-
         response = requests.get(image_url)
         img = Image.open(BytesIO(response.content)).convert("RGB")
 
@@ -33,90 +31,65 @@ def predict_disease(image_url):
         prediction = model.predict(img_array)
         index = np.argmax(prediction)
 
-        print("Prediction:", labels[index])
-
         return labels[index]
 
-    except Exception as e:
-        print("ERROR in prediction:", e)
+    except:
         return "Unknown disease"
 
-# 🌦 Simple Weather Logic
-def weather_advice():
-    return "🌦 Weather looks fine for spraying today."
+# Language messages
+def get_message(lang, key):
+    messages = {
+        "start": {
+            "en": "🌍 Choose language:\n1️⃣ English\n2️⃣ Hindi\n3️⃣ Punjabi\n4️⃣ Telugu",
+            "hi": "🌍 भाषा चुनें:\n1️⃣ English\n2️⃣ Hindi\n3️⃣ Punjabi\n4️⃣ Telugu",
+            "pa": "🌍 ਭਾਸ਼ਾ ਚੁਣੋ:\n1️⃣ English\n2️⃣ Hindi\n3️⃣ Punjabi\n4️⃣ Telugu",
+            "te": "🌍 భాషను ఎంచుకోండి:\n1️⃣ English\n2️⃣ Hindi\n3️⃣ Punjabi\n4️⃣ Telugu"
+        },
+        "send_image": {
+            "en": "📸 Send crop image",
+            "hi": "📸 फसल की फोटो भेजें",
+            "pa": "📸 ਫਸਲ ਦੀ ਫੋਟੋ ਭੇਜੋ",
+            "te": "📸 పంట ఫోటో పంపండి"
+        }
+    }
+    return messages[key][lang]
 
-# 📍 Nearby link
-def nearby_shop():
-    return "https://www.google.com/maps/search/pesticide+shop"
-
-# ✅ Home route
 @app.route("/")
 def home():
-    return "✅ AI Crop Doctor Running!"
+    return "AI Crop Doctor Running"
 
-# 🚀 WhatsApp Bot
 @app.route("/webhook", methods=["POST"])
 def whatsapp_bot():
-    incoming_msg = request.values.get('Body', '').lower()
+    incoming_msg = request.values.get('Body', '').strip()
     sender = request.values.get('From')
     media_url = request.values.get('MediaUrl0')
-
-    print("Incoming message:", incoming_msg)
-    print("Media URL:", media_url)
 
     resp = MessagingResponse()
     msg = resp.message()
 
-    # 🌍 LANGUAGE SELECTION
-    if any(word in incoming_msg for word in ["english", "hindi", "punjabi", "telugu"]):
-        if "english" in incoming_msg:
-            user_lang[sender] = "en"
-        elif "hindi" in incoming_msg:
-            user_lang[sender] = "hi"
-        elif "punjabi" in incoming_msg:
-            user_lang[sender] = "pa"
-        elif "telugu" in incoming_msg:
-            user_lang[sender] = "te"
-
-        msg.body(
-            "✅ Language selected!\n\n"
-            "📸 Send crop image\n"
-            "💬 Or describe problem\n\n"
-            "👉 Type 'advisory' for detailed help"
-        )
-        return str(resp)
-
-    # Ask language if not selected
+    # If language not selected
     if sender not in user_lang:
-        msg.body(
-            "🌍 Choose your language:\n\n"
-            "👉 English\n"
-            "👉 Hindi\n"
-            "👉 Punjabi\n"
-            "👉 Telugu\n\n"
-            "💬 Type your language"
-        )
+        if incoming_msg == "1":
+            user_lang[sender] = "en"
+        elif incoming_msg == "2":
+            user_lang[sender] = "hi"
+        elif incoming_msg == "3":
+            user_lang[sender] = "pa"
+        elif incoming_msg == "4":
+            user_lang[sender] = "te"
+        else:
+            msg.body(get_message("en", "start"))
+            return str(resp)
+
+        msg.body(get_message(user_lang[sender], "send_image"))
         return str(resp)
 
-    # 📘 Advisory Mode
-    if "advisory" in incoming_msg:
-        msg.body(
-            "📘 Detailed Advisory\n\n"
-            "🧪 Mancozeb 75% WP\n"
-            "• Dose: 2g/L water\n"
-            "• Spray every 7 days\n\n"
-            "🌿 Neem Oil\n"
-            "• 5ml/L\n\n"
-            "📈 Result: Disease stops in 5–7 days\n"
-            "⚠️ Use proper safety"
-        )
-        return str(resp)
+    lang = user_lang[sender]
 
-    # 📸 IMAGE CASE (FIXED CONDITION)
-    if media_url is not None and media_url != "":
+    # Image case
+    if media_url:
         disease = predict_disease(media_url)
 
-        # Smart pesticide suggestion
         if "spot" in disease.lower():
             pesticide = "Mancozeb"
         elif "yellow" in disease.lower():
@@ -124,33 +97,18 @@ def whatsapp_bot():
         else:
             pesticide = "General fertilizer"
 
-        reply = f"""
-📸 Image received!
+        # Language-wise reply
+        if lang == "hi":
+            reply = f"📸 फोटो प्राप्त!\n\n🧠 रोग: {disease}\n🧪 दवा: {pesticide}\n🌿 नीम तेल उपयोग करें"
+        elif lang == "pa":
+            reply = f"📸 ਫੋਟੋ ਮਿਲੀ!\n\n🧠 ਬਿਮਾਰੀ: {disease}\n🧪 ਦਵਾ: {pesticide}\n🌿 ਨੀਮ ਤੇਲ ਵਰਤੋ"
+        elif lang == "te":
+            reply = f"📸 ఫోటో వచ్చింది!\n\n🧠 వ్యాధి: {disease}\n🧪 మందు: {pesticide}\n🌿 నీమ్ ఆయిల్ ఉపయోగించండి"
+        else:
+            reply = f"📸 Image received!\n\n🧠 Disease: {disease}\n🧪 Chemical: {pesticide}\n🌿 Use neem oil"
 
-🧠 AI Detected: {disease}
-
-🧪 Chemical:
-• {pesticide}
-
-🌿 Natural:
-• Neem oil spray
-
-{weather_advice()}
-
-📍 Nearby Shop:
-{nearby_shop()}
-
-👉 Type 'advisory' for full details
-"""
-
-    # 💬 TEXT CASE
     else:
-        reply = (
-            "🤖 Send crop image\n"
-            "Or type problem like:\n"
-            "• yellow leaves\n"
-            "• brown spots"
-        )
+        reply = get_message(lang, "send_image")
 
     msg.body(reply)
     return str(resp)
