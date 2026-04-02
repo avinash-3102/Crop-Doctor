@@ -10,7 +10,7 @@ from groq import Groq
 app = Flask(__name__)
 
 # 🔑 Groq API
-client = Groq(api_key="YOUR_GROQ_API_KEY")
+client = Groq(api_key="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")
 
 # Load model
 model = tf.keras.models.load_model("keras_model.h5", compile=False)
