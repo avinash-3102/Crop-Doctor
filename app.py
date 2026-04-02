@@ -10,19 +10,15 @@ from groq import Groq
 app = Flask(__name__)
 
 # 🔑 Groq API
-client = Groq(api_key="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")
+client = Groq(api_key="YOUR_GROQ_API_KEY")
 
-# 🧠 AI Model
+# Load model
 model = tf.keras.models.load_model("keras_model.h5", compile=False)
 
 with open("labels.txt", "r") as f:
     labels = [line.strip() for line in f.readlines()]
 
-# 🗂 User state
-user_lang = {}
-user_state = {}
-
-# 📸 Image prediction
+# 🧠 IMAGE AI
 def predict_disease(image_url):
     try:
         response = requests.get(image_url)
@@ -37,114 +33,87 @@ def predict_disease(image_url):
     except:
         return "Unknown disease"
 
-# 💬 Groq chat
-def ai_chat(text):
+# 💬 GROQ CHAT (MAIN BRAIN)
+def ai_chat(user_text):
     try:
-        res = client.chat.completions.create(
+        response = client.chat.completions.create(
             model="llama3-8b-8192",
             messages=[
-                {"role": "system", "content": "You are a helpful agriculture assistant for farmers. Keep answers simple."},
-                {"role": "user", "content": text}
+                {
+                    "role": "system",
+                    "content": "You are an expert agriculture assistant. Help farmers with crops, diseases, fertilizers, weather, and solutions. Keep answers simple and practical."
+                },
+                {"role": "user", "content": user_text}
             ]
         )
-        return res.choices[0].message.content
+        return response.choices[0].message.content
     except:
-        return "Sorry, I couldn't understand."
+        return "⚠️ Sorry, try again."
 
-# 🌐 Home
+# 🌦 Weather (simple)
+def weather_advice():
+    return "🌦 Weather looks suitable for spraying today."
+
+# 📍 Nearby
+def nearby_shop():
+    return "📍 https://www.google.com/maps/search/pesticide+shop"
+
 @app.route("/")
 def home():
     return "AI Crop Doctor Running"
 
-# 🚀 Main bot
+# 🚀 MAIN BOT (NO MENU — PURE AI CHAT)
 @app.route("/webhook", methods=["POST"])
 def whatsapp_bot():
-    incoming_msg = request.values.get('Body', '').strip().lower()
-    sender = request.values.get('From')
+    incoming_msg = request.values.get('Body', '').strip()
     media_url = request.values.get('MediaUrl0')
 
     resp = MessagingResponse()
     msg = resp.message()
 
-    # 👋 STEP 1: ALWAYS HANDLE HI FIRST
-    if incoming_msg in ["hi", "hello", "start"]:
-        user_state[sender] = "menu"
-        user_lang.pop(sender, None)
-
-        msg.body(
-            "👋 Welcome to AI Crop Doctor!\n\n"
-            "1️⃣ Start Diagnosis\n"
-            "2️⃣ Advisory\n"
-            "3️⃣ Exit\n\n"
-            "Reply with number"
-        )
-        return str(resp)
-
-    # ❌ EXIT
-    if incoming_msg == "3":
-        user_state.pop(sender, None)
-        user_lang.pop(sender, None)
-
-        msg.body("👋 Thank you! Stay healthy 🌱")
-        return str(resp)
-
-    # 🌱 START → LANGUAGE
-    if incoming_msg == "1" and user_state.get(sender) == "menu":
-        user_state[sender] = "language"
-
-        msg.body(
-            "🌍 Choose language:\n"
-            "1️⃣ English\n2️⃣ Hindi\n3️⃣ Punjabi\n4️⃣ Telugu"
-        )
-        return str(resp)
-
-    # 📘 ADVISORY
-    if incoming_msg == "2":
-        msg.body(
-            "📘 Advisory:\n\n"
-            "🧪 Mancozeb 75% WP\n"
-            "• Dose: 2g/L water\n\n"
-            "🌿 Neem Oil\n"
-            "• 5ml/L\n"
-        )
-        return str(resp)
-
-    # 🌍 LANGUAGE SELECTION (ONLY ONCE)
-    if user_state.get(sender) == "language":
-        if incoming_msg == "1":
-            user_lang[sender] = "en"
-        elif incoming_msg == "2":
-            user_lang[sender] = "hi"
-        elif incoming_msg == "3":
-            user_lang[sender] = "pa"
-        elif incoming_msg == "4":
-            user_lang[sender] = "te"
-        else:
-            msg.body("❌ Invalid choice (1–4)")
-            return str(resp)
-
-        user_state[sender] = "chat"
-
-        msg.body("✅ Language selected!\n📸 Send crop image or ask question")
-        return str(resp)
-
     # 📸 IMAGE CASE
     if media_url:
         disease = predict_disease(media_url)
 
-        msg.body(
-            f"📸 Image received!\n\n🧠 Disease: {disease}\n🧪 Use Mancozeb\n🌿 Neem oil recommended"
-        )
-        return str(resp)
+        reply = f"""
+📸 Image received!
 
-    # 💬 CHAT MODE (GROQ)
-    if user_state.get(sender) == "chat":
-        reply = ai_chat(incoming_msg)
+🧠 Detected: {disease}
+
+🧪 Advisory:
+• Use Mancozeb spray
+• Neem oil recommended
+
+{weather_advice()}
+
+{nearby_shop()}
+
+💬 You can ask more about this disease!
+"""
         msg.body(reply)
         return str(resp)
 
-    # 🔁 FALLBACK
-    msg.body("👋 Type 'hi' to start")
+    # 👋 GREETING
+    if incoming_msg.lower() in ["hi", "hello", "hey"]:
+        msg.body(
+            "👋 Welcome to AI Crop Doctor 🌾\n\n"
+            "Ask anything about crops, diseases, fertilizers.\n"
+            "Or send a crop image 📸"
+        )
+        return str(resp)
+
+    # 💬 NORMAL AI CHAT
+    ai_reply = ai_chat(incoming_msg)
+
+    final_reply = f"""
+{ai_reply}
+
+📘 Need full advisory? Type: advisory
+{weather_advice()}
+{nearby_shop()}
+"""
+
+    msg.body(final_reply)
     return str(resp)
 
 if __name__ == "__main__":
