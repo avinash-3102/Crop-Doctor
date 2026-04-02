@@ -5,20 +5,24 @@ import tensorflow as tf
 from PIL import Image
 import requests
 from io import BytesIO
+from groq import Groq
 
 app = Flask(__name__)
 
-# Store user language
-user_lang = {}
+# 🔑 Groq API
+client = Groq(api_key="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")
 
-# Load AI model
+# 🧠 AI Model
 model = tf.keras.models.load_model("keras_model.h5", compile=False)
 
-# Load labels
 with open("labels.txt", "r") as f:
     labels = [line.strip() for line in f.readlines()]
 
-# AI Prediction
+# 🗂 User state
+user_lang = {}
+user_state = {}
+
+# 📸 Image prediction
 def predict_disease(image_url):
     try:
         response = requests.get(image_url)
@@ -29,46 +33,84 @@ def predict_disease(image_url):
         img_array = np.expand_dims(img_array, axis=0)
 
         prediction = model.predict(img_array)
-        index = np.argmax(prediction)
-
-        return labels[index]
-
+        return labels[np.argmax(prediction)]
     except:
         return "Unknown disease"
 
-# Language messages
-def get_message(lang, key):
-    messages = {
-        "start": {
-            "en": "🌍 Choose language:\n1️⃣ English\n2️⃣ Hindi\n3️⃣ Punjabi\n4️⃣ Telugu",
-            "hi": "🌍 भाषा चुनें:\n1️⃣ English\n2️⃣ Hindi\n3️⃣ Punjabi\n4️⃣ Telugu",
-            "pa": "🌍 ਭਾਸ਼ਾ ਚੁਣੋ:\n1️⃣ English\n2️⃣ Hindi\n3️⃣ Punjabi\n4️⃣ Telugu",
-            "te": "🌍 భాషను ఎంచుకోండి:\n1️⃣ English\n2️⃣ Hindi\n3️⃣ Punjabi\n4️⃣ Telugu"
-        },
-        "send_image": {
-            "en": "📸 Send crop image",
-            "hi": "📸 फसल की फोटो भेजें",
-            "pa": "📸 ਫਸਲ ਦੀ ਫੋਟੋ ਭੇਜੋ",
-            "te": "📸 పంట ఫోటో పంపండి"
-        }
-    }
-    return messages[key][lang]
+# 💬 Groq chat
+def ai_chat(text):
+    try:
+        res = client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=[
+                {"role": "system", "content": "You are a helpful agriculture assistant for farmers. Keep answers simple."},
+                {"role": "user", "content": text}
+            ]
+        )
+        return res.choices[0].message.content
+    except:
+        return "Sorry, I couldn't understand."
 
+# 🌐 Home
 @app.route("/")
 def home():
     return "AI Crop Doctor Running"
 
+# 🚀 Main bot
 @app.route("/webhook", methods=["POST"])
 def whatsapp_bot():
-    incoming_msg = request.values.get('Body', '').strip()
+    incoming_msg = request.values.get('Body', '').strip().lower()
     sender = request.values.get('From')
     media_url = request.values.get('MediaUrl0')
 
     resp = MessagingResponse()
     msg = resp.message()
 
-    # If language not selected
-    if sender not in user_lang:
+    # 👋 STEP 1: ALWAYS HANDLE HI FIRST
+    if incoming_msg in ["hi", "hello", "start"]:
+        user_state[sender] = "menu"
+        user_lang.pop(sender, None)
+
+        msg.body(
+            "👋 Welcome to AI Crop Doctor!\n\n"
+            "1️⃣ Start Diagnosis\n"
+            "2️⃣ Advisory\n"
+            "3️⃣ Exit\n\n"
+            "Reply with number"
+        )
+        return str(resp)
+
+    # ❌ EXIT
+    if incoming_msg == "3":
+        user_state.pop(sender, None)
+        user_lang.pop(sender, None)
+
+        msg.body("👋 Thank you! Stay healthy 🌱")
+        return str(resp)
+
+    # 🌱 START → LANGUAGE
+    if incoming_msg == "1" and user_state.get(sender) == "menu":
+        user_state[sender] = "language"
+
+        msg.body(
+            "🌍 Choose language:\n"
+            "1️⃣ English\n2️⃣ Hindi\n3️⃣ Punjabi\n4️⃣ Telugu"
+        )
+        return str(resp)
+
+    # 📘 ADVISORY
+    if incoming_msg == "2":
+        msg.body(
+            "📘 Advisory:\n\n"
+            "🧪 Mancozeb 75% WP\n"
+            "• Dose: 2g/L water\n\n"
+            "🌿 Neem Oil\n"
+            "• 5ml/L\n"
+        )
+        return str(resp)
+
+    # 🌍 LANGUAGE SELECTION (ONLY ONCE)
+    if user_state.get(sender) == "language":
         if incoming_msg == "1":
             user_lang[sender] = "en"
         elif incoming_msg == "2":
@@ -78,39 +120,31 @@ def whatsapp_bot():
         elif incoming_msg == "4":
             user_lang[sender] = "te"
         else:
-            msg.body(get_message("en", "start"))
+            msg.body("❌ Invalid choice (1–4)")
             return str(resp)
 
-        msg.body(get_message(user_lang[sender], "send_image"))
+        user_state[sender] = "chat"
+
+        msg.body("✅ Language selected!\n📸 Send crop image or ask question")
         return str(resp)
 
-    lang = user_lang[sender]
-
-    # Image case
+    # 📸 IMAGE CASE
     if media_url:
         disease = predict_disease(media_url)
 
-        if "spot" in disease.lower():
-            pesticide = "Mancozeb"
-        elif "yellow" in disease.lower():
-            pesticide = "Urea"
-        else:
-            pesticide = "General fertilizer"
+        msg.body(
+            f"📸 Image received!\n\n🧠 Disease: {disease}\n🧪 Use Mancozeb\n🌿 Neem oil recommended"
+        )
+        return str(resp)
 
-        # Language-wise reply
-        if lang == "hi":
-            reply = f"📸 फोटो प्राप्त!\n\n🧠 रोग: {disease}\n🧪 दवा: {pesticide}\n🌿 नीम तेल उपयोग करें"
-        elif lang == "pa":
-            reply = f"📸 ਫੋਟੋ ਮਿਲੀ!\n\n🧠 ਬਿਮਾਰੀ: {disease}\n🧪 ਦਵਾ: {pesticide}\n🌿 ਨੀਮ ਤੇਲ ਵਰਤੋ"
-        elif lang == "te":
-            reply = f"📸 ఫోటో వచ్చింది!\n\n🧠 వ్యాధి: {disease}\n🧪 మందు: {pesticide}\n🌿 నీమ్ ఆయిల్ ఉపయోగించండి"
-        else:
-            reply = f"📸 Image received!\n\n🧠 Disease: {disease}\n🧪 Chemical: {pesticide}\n🌿 Use neem oil"
+    # 💬 CHAT MODE (GROQ)
+    if user_state.get(sender) == "chat":
+        reply = ai_chat(incoming_msg)
+        msg.body(reply)
+        return str(resp)
 
-    else:
-        reply = get_message(lang, "send_image")
-
-    msg.body(reply)
+    # 🔁 FALLBACK
+    msg.body("👋 Type 'hi' to start")
     return str(resp)
 
 if __name__ == "__main__":
