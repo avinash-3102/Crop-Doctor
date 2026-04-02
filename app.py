@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 from PIL import Image
 import requests
+from io import BytesIO
 
 app = Flask(__name__)
 
@@ -17,22 +18,28 @@ model = tf.keras.models.load_model("keras_model.h5", compile=False)
 with open("labels.txt", "r") as f:
     labels = [line.strip() for line in f.readlines()]
 
-# 🧠 AI Prediction Function
+# 🧠 AI Prediction Function (FIXED)
 def predict_disease(image_url):
-    img_data = requests.get(image_url).content
-    with open("leaf.jpg", "wb") as f:
-        f.write(img_data)
+    try:
+        print("Fetching image from:", image_url)
 
-    img = Image.open("leaf.jpg").convert("RGB")
-    img = img.resize((224, 224))
+        response = requests.get(image_url)
+        img = Image.open(BytesIO(response.content)).convert("RGB")
 
-    img_array = np.array(img) / 255.0
-    img_array = np.expand_dims(img_array, axis=0)
+        img = img.resize((224, 224))
+        img_array = np.array(img) / 255.0
+        img_array = np.expand_dims(img_array, axis=0)
 
-    prediction = model.predict(img_array)
-    index = np.argmax(prediction)
+        prediction = model.predict(img_array)
+        index = np.argmax(prediction)
 
-    return labels[index]
+        print("Prediction:", labels[index])
+
+        return labels[index]
+
+    except Exception as e:
+        print("ERROR in prediction:", e)
+        return "Unknown disease"
 
 # 🌦 Simple Weather Logic
 def weather_advice():
@@ -54,10 +61,13 @@ def whatsapp_bot():
     sender = request.values.get('From')
     media_url = request.values.get('MediaUrl0')
 
+    print("Incoming message:", incoming_msg)
+    print("Media URL:", media_url)
+
     resp = MessagingResponse()
     msg = resp.message()
 
-    # 🌍 LANGUAGE SELECTION (TEXT BUTTON STYLE)
+    # 🌍 LANGUAGE SELECTION
     if any(word in incoming_msg for word in ["english", "hindi", "punjabi", "telugu"]):
         if "english" in incoming_msg:
             user_lang[sender] = "en"
@@ -102,8 +112,8 @@ def whatsapp_bot():
         )
         return str(resp)
 
-    # 📸 IMAGE CASE (AI DETECTION)
-    if media_url:
+    # 📸 IMAGE CASE (FIXED CONDITION)
+    if media_url is not None and media_url != "":
         disease = predict_disease(media_url)
 
         # Smart pesticide suggestion
