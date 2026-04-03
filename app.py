@@ -1,25 +1,30 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 import numpy as np
-import tensorflow as tf
 from PIL import Image
 import requests
 from io import BytesIO
 from groq import Groq
+import tensorflow as tf
 import os
+
+# 🔇 Reduce TensorFlow logs (important for Render)
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 app = Flask(__name__)
 
-# 🔐 Load API key from environment (Render will provide this)
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+# 🔐 API KEY (from Render)
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-if not GROQ_API_KEY:
-    raise ValueError("GROQ_API_KEY not found! Please set it in Render environment variables.")
+# 🧠 Lazy load model (prevents crash)
+model = None
 
-client = Groq(api_key=GROQ_API_KEY)
-
-# Load model
-model = tf.keras.models.load_model("keras_model.h5", compile=False)
+def load_model_once():
+    global model
+    if model is None:
+        print("Loading model...")
+        model = tf.keras.models.load_model("keras_model.h5", compile=False)
+    return model
 
 # Load labels
 with open("labels.txt", "r") as f:
@@ -35,7 +40,7 @@ def predict_disease(image_url):
         img_array = np.array(img) / 255.0
         img_array = np.expand_dims(img_array, axis=0)
 
-        prediction = model.predict(img_array)
+        prediction = load_model_once().predict(img_array)
         return labels[np.argmax(prediction)]
 
     except Exception as e:
@@ -48,31 +53,27 @@ def ai_chat(user_text):
         response = client.chat.completions.create(
             model="llama3-8b-8192",
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert agriculture assistant. Help farmers with crops, diseases, fertilizers, and solutions. Keep answers simple."
-                },
+                {"role": "system", "content": "You are an agriculture expert. Give simple advice."},
                 {"role": "user", "content": user_text}
             ]
         )
         return response.choices[0].message.content
     except Exception as e:
         print("AI Error:", e)
-        return "⚠️ Sorry, try again."
+        return "⚠️ AI error. Try again."
 
-# 🌦 Weather (simple)
+# 🌦 Weather
 def weather_advice():
     return "🌦 Weather is suitable for spraying today."
 
-# 📍 Nearby shop
+# 📍 Shop
 def nearby_shop():
     return "📍 https://www.google.com/maps/search/pesticide+shop"
 
 @app.route("/")
 def home():
-    return "AI Crop Doctor Running ✅"
+    return "✅ AI Crop Doctor LIVE"
 
-# 🚀 MAIN BOT
 @app.route("/webhook", methods=["POST"])
 def whatsapp_bot():
     incoming_msg = request.values.get('Body', '').strip()
@@ -81,50 +82,34 @@ def whatsapp_bot():
     resp = MessagingResponse()
     msg = resp.message()
 
-    # 📸 IMAGE CASE
+    # 📸 Image case
     if media_url:
         disease = predict_disease(media_url)
 
-        reply = f"""
-📸 Image received!
+        msg.body(f"""
+📸 Detected: {disease}
 
-🧠 Detected: {disease}
-
-🧪 Advisory:
-• Use Mancozeb spray
-• Neem oil recommended
+🧪 Use:
+• Mancozeb spray
+• Neem oil
 
 {weather_advice()}
-
 {nearby_shop()}
-
-💬 Ask anything about this disease!
-"""
-        msg.body(reply)
+""")
         return str(resp)
 
-    # 👋 GREETING
-    if incoming_msg.lower() in ["hi", "hello", "hey"]:
-        msg.body(
-            "👋 Welcome to AI Crop Doctor 🌾\n\n"
-            "Ask anything about crops, diseases, fertilizers.\n"
-            "Or send crop image 📸"
-        )
+    # 👋 Greeting
+    if incoming_msg.lower() in ["hi", "hello"]:
+        msg.body("👋 Welcome to AI Crop Doctor 🌾\nSend crop image or ask question.")
         return str(resp)
 
-    # 💬 NORMAL AI CHAT
+    # 💬 AI chat
     ai_reply = ai_chat(incoming_msg)
 
-    final_reply = f"""
-{ai_reply}
-
-📘 Need advisory? Type: advisory
-{weather_advice()}
-{nearby_shop()}
-"""
-
-    msg.body(final_reply)
+    msg.body(f"{ai_reply}\n\n{weather_advice()}")
     return str(resp)
 
+# 🚀 Run (Render compatible)
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
