@@ -50,17 +50,24 @@ def predict_disease(image_url):
 # 💬 AI Chat
 def ai_chat(user_text):
     try:
+        api_key = os.environ.get("GROQ_API_KEY")
+
+        if not api_key:
+            return "❌ API key missing in Render"
+
         response = client.chat.completions.create(
             model="llama3-8b-8192",
             messages=[
-                {"role": "system", "content": "You are an agriculture expert. Give simple advice."},
+                {"role": "system", "content": "You are an agriculture expert."},
                 {"role": "user", "content": user_text}
             ]
         )
+
         return response.choices[0].message.content
+
     except Exception as e:
-        print("AI Error:", e)
-        return "⚠️ AI error. Try again."
+        print("AI ERROR:", str(e))
+        return f"⚠️ AI error: {str(e)}"
 
 # 🌦 Weather
 def weather_advice():
