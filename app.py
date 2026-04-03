@@ -6,19 +6,26 @@ from PIL import Image
 import requests
 from io import BytesIO
 from groq import Groq
+import os
 
 app = Flask(__name__)
 
-# 🔑 Groq API
-client = Groq(api_key="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")
+# 🔐 Load API key from environment (Render will provide this)
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+
+if not GROQ_API_KEY:
+    raise ValueError("GROQ_API_KEY not found! Please set it in Render environment variables.")
+
+client = Groq(api_key=GROQ_API_KEY)
 
 # Load model
 model = tf.keras.models.load_model("keras_model.h5", compile=False)
 
+# Load labels
 with open("labels.txt", "r") as f:
     labels = [line.strip() for line in f.readlines()]
 
-# 🧠 IMAGE AI
+# 📸 Image Prediction
 def predict_disease(image_url):
     try:
         response = requests.get(image_url)
@@ -30,10 +37,12 @@ def predict_disease(image_url):
 
         prediction = model.predict(img_array)
         return labels[np.argmax(prediction)]
-    except:
+
+    except Exception as e:
+        print("Error:", e)
         return "Unknown disease"
 
-# 💬 GROQ CHAT (MAIN BRAIN)
+# 💬 AI Chat
 def ai_chat(user_text):
     try:
         response = client.chat.completions.create(
@@ -41,28 +50,29 @@ def ai_chat(user_text):
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert agriculture assistant. Help farmers with crops, diseases, fertilizers, weather, and solutions. Keep answers simple and practical."
+                    "content": "You are an expert agriculture assistant. Help farmers with crops, diseases, fertilizers, and solutions. Keep answers simple."
                 },
                 {"role": "user", "content": user_text}
             ]
         )
         return response.choices[0].message.content
-    except:
+    except Exception as e:
+        print("AI Error:", e)
         return "⚠️ Sorry, try again."
 
 # 🌦 Weather (simple)
 def weather_advice():
-    return "🌦 Weather looks suitable for spraying today."
+    return "🌦 Weather is suitable for spraying today."
 
-# 📍 Nearby
+# 📍 Nearby shop
 def nearby_shop():
     return "📍 https://www.google.com/maps/search/pesticide+shop"
 
 @app.route("/")
 def home():
-    return "AI Crop Doctor Running"
+    return "AI Crop Doctor Running ✅"
 
-# 🚀 MAIN BOT (NO MENU — PURE AI CHAT)
+# 🚀 MAIN BOT
 @app.route("/webhook", methods=["POST"])
 def whatsapp_bot():
     incoming_msg = request.values.get('Body', '').strip()
@@ -88,7 +98,7 @@ def whatsapp_bot():
 
 {nearby_shop()}
 
-💬 You can ask more about this disease!
+💬 Ask anything about this disease!
 """
         msg.body(reply)
         return str(resp)
@@ -98,7 +108,7 @@ def whatsapp_bot():
         msg.body(
             "👋 Welcome to AI Crop Doctor 🌾\n\n"
             "Ask anything about crops, diseases, fertilizers.\n"
-            "Or send a crop image 📸"
+            "Or send crop image 📸"
         )
         return str(resp)
 
@@ -108,7 +118,7 @@ def whatsapp_bot():
     final_reply = f"""
 {ai_reply}
 
-📘 Need full advisory? Type: advisory
+📘 Need advisory? Type: advisory
 {weather_advice()}
 {nearby_shop()}
 """
