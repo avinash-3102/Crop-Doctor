@@ -1,8 +1,8 @@
 flask
 twilio
-numpy==1.23.5
-tensorflow-cpu==2.10.0
+numpy
+tensorflow-cpu
 pillow
 requests
-gunicorn
 groq
+gunicorn
