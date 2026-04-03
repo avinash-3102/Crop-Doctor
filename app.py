@@ -1,64 +1,55 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
-import numpy as np
-from PIL import Image
-import requests
-from io import BytesIO
 from groq import Groq
-import tensorflow as tf
 import os
-
-# 🔇 Reduce TensorFlow logs (important for Render)
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 app = Flask(__name__)
 
-# 🔐 API KEY (from Render)
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+# 🔐 API key
+API_KEY = os.environ.get("GROQ_API_KEY")
 
-# 🧠 Lazy load model (prevents crash)
-model = None
+# 🌍 Language detection (simple)
+def detect_language(text):
+    text = text.lower()
+    if any(word in text for word in ["kya", "hai", "namaste", "kaise"]):
+        return "Hindi"
+    return "English"
 
-def load_model_once():
-    global model
-    if model is None:
-        print("Loading model...")
-        model = tf.keras.models.load_model("keras_model.h5", compile=False)
-    return model
+# 🌦 Weather (simple dynamic style)
+def weather_advice():
+    return "🌦 Weather looks suitable for spraying today. Avoid spraying during strong sunlight."
 
-# Load labels
-with open("labels.txt", "r") as f:
-    labels = [line.strip() for line in f.readlines()]
+# 📍 Shop
+def nearby_shop():
+    return "📍 https://www.google.com/maps/search/pesticide+shop"
 
-# 📸 Image Prediction
-def predict_disease(image_url):
-    try:
-        response = requests.get(image_url)
-        img = Image.open(BytesIO(response.content)).convert("RGB")
-
-        img = img.resize((224, 224))
-        img_array = np.array(img) / 255.0
-        img_array = np.expand_dims(img_array, axis=0)
-
-        prediction = load_model_once().predict(img_array)
-        return labels[np.argmax(prediction)]
-
-    except Exception as e:
-        print("Error:", e)
-        return "Unknown disease"
-
-# 💬 AI Chat
+# 💬 AI Chat (TEXT)
 def ai_chat(user_text):
     try:
-        api_key = os.environ.get("GROQ_API_KEY")
+        if not API_KEY:
+            return "❌ API key missing"
 
-        if not api_key:
-            return "❌ API key missing in Render"
+        client = Groq(api_key=API_KEY)
+        language = detect_language(user_text)
 
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": "You are an agriculture expert."},
+                {
+                    "role": "system",
+                    "content": f"""
+You are an expert agriculture assistant.
+
+Always respond in {language}.
+
+Give answers in this format:
+1. Problem
+2. Natural Solution
+3. Chemical Solution
+4. Prevention
+Keep it simple for farmers.
+"""
+                },
                 {"role": "user", "content": user_text}
             ]
         )
@@ -66,57 +57,94 @@ def ai_chat(user_text):
         return response.choices[0].message.content
 
     except Exception as e:
-        print("AI ERROR:", str(e))
-        return f"⚠️ AI error: {str(e)}"
+        return f"⚠️ AI Error: {str(e)}"
 
-# 🌦 Weather
-def weather_advice():
-    return "🌦 Weather is suitable for spraying today."
+# 📸 Image Disease Detection (AI BASED)
+def predict_disease(image_url):
+    try:
+        client = Groq(api_key=API_KEY)
 
-# 📍 Shop
-def nearby_shop():
-    return "📍 https://www.google.com/maps/search/pesticide+shop"
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """
+You are a plant disease expert.
 
+From the image, identify:
+1. Disease name
+2. Natural treatment
+3. Chemical treatment
+4. Prevention
+
+Keep it simple for farmers.
+"""
+                },
+                {
+                    "role": "user",
+                    "content": f"Analyze this crop image: {image_url}"
+                }
+            ]
+        )
+
+        return response.choices[0].message.content
+
+    except Exception as e:
+        return f"⚠️ Detection Error: {str(e)}"
+
+# 🏠 Home
 @app.route("/")
 def home():
     return "✅ AI Crop Doctor LIVE"
 
+# 🚀 MAIN BOT
 @app.route("/webhook", methods=["POST"])
 def whatsapp_bot():
     incoming_msg = request.values.get('Body', '').strip()
-    media_url = request.values.get('MediaUrl0')
+    num_media = int(request.values.get('NumMedia', 0))
 
     resp = MessagingResponse()
     msg = resp.message()
 
-    # 📸 Image case
-    if media_url:
-        disease = predict_disease(media_url)
+    # 📸 IMAGE CASE
+    if num_media > 0:
+        media_url = request.values.get('MediaUrl0')
+
+        result = predict_disease(media_url)
 
         msg.body(f"""
-📸 Detected: {disease}
+📸 Crop Analysis:
 
-🧪 Use:
-• Mancozeb spray
-• Neem oil
+{result}
 
 {weather_advice()}
+
 {nearby_shop()}
 """)
         return str(resp)
 
-    # 👋 Greeting
-    if incoming_msg.lower() in ["hi", "hello"]:
-        msg.body("👋 Welcome to AI Crop Doctor 🌾\nSend crop image or ask question.")
+    # 👋 GREETING
+    if incoming_msg.lower() in ["hi", "hello", "hey"]:
+        msg.body(
+            "👋 Welcome to AI Crop Doctor 🌾\n\n"
+            "Send crop image 📸 OR ask any farming question."
+        )
         return str(resp)
 
-    # 💬 AI chat
+    # 💬 TEXT CHAT
     ai_reply = ai_chat(incoming_msg)
 
-    msg.body(f"{ai_reply}\n\n{weather_advice()}")
+    msg.body(f"""
+{ai_reply}
+
+{weather_advice()}
+{nearby_shop()}
+""")
+
     return str(resp)
 
-# 🚀 Run (Render compatible)
+# 🚀 RUN
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
